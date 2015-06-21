@@ -1,0 +1,110 @@
+---
+title: "Prediction Of Manner Of The Exercise"
+author: "Swapnil Jamthe"
+date: "19 June 2015"
+output: html_document
+---
+##Summary  
+Data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants was collected. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. Models are built to predict the manner in which they did the exercise.
+More information is available at  http://groupware.les.inf.puc-rio.br/har.
+
+##Shortlisting features  
+Removed following columns from the data.  
+1. Columns with more than 50% of values having "NA".  
+2. Columns with more than 50% of empty values.  
+3. user_name, new_window, num_window columns.  
+
+##Dividing data  
+Data is divided into following.  
+1. 20% of data is used for calculation of out of sample error.  
+2. Out of remaining data 20% is used as cross validation of different models.  
+3. Remaining data is used as training set.   
+
+##Prediction Models  
+Following prediction models are tried which are trained on training set.  
+1. rpart5 - Classification tree with 5 fold cross validation  
+2. rpart10 - Classification tree with 10 fold cross validation  
+3. rf5 - Random forest with 5 fold cross validation  
+4. gbm5 - Boosted trees with 5 fold cross validation  
+5. gbm10 - Boosted tress with 10 fold cross validation  
+
+
+```{r echo=FALSE,message=FALSE,include=FALSE}
+library(caret)
+library(doParallel)
+activityData<-read.csv("pml-training.csv")
+naCols<-sapply(activityData,function(x){ifelse((sum(is.na(x))/nrow(activityData))<0.5,TRUE,FALSE)})
+activityDataNAFilter<-activityData[,naCols];
+emptyCols<-sapply(activityDataNAFilter,function(x){ifelse((sum(x=="")/nrow(activityData))<0.5,TRUE,FALSE)})
+activityDataEmptyFilter<-activityDataNAFilter[,emptyCols]
+timeCols<-sapply(names(activityDataEmptyFilter),function(x){ifelse(grepl("timestamp",x),FALSE,TRUE)})
+activityDataFinal<-activityDataEmptyFilter[,timeCols]
+activityDataFinal$user_name<-NULL
+activityDataFinal$new_window<-NULL
+activityDataFinal$num_window<-NULL
+activityDataFinal$X<-NULL
+trainingIndex<-createDataPartition(y=activityDataFinal$classe,p=0.8,list=FALSE)
+trainingData<-activityDataFinal[trainingIndex,]
+testingData<-activityDataFinal[-trainingIndex,]
+trainingIndex<-createDataPartition(y=trainingData$classe,p=0.8,list=FALSE)
+trainingData<-trainingData[trainingIndex,]
+validationData<-trainingData[-trainingIndex,]
+```
+
+
+
+```{r echo=FALSE,message=FALSE,cache=TRUE,include=FALSE}
+cl <- makeCluster(detectCores())
+registerDoParallel(cl)
+tc5 <- trainControl("cv",5)
+tc10 <- trainControl("cv",10)
+modFitRpart5<-train(classe~.,data = trainingData,trControl=tc5,method="rpart")
+modFitRpart10<-train(classe~.,data = trainingData,trControl=tc10,method="rpart")
+modFitRf5<-train(classe~.,data = trainingData,trControl=tc5,method="rf")
+modFitGbm5<-train(classe~.,data = trainingData,trControl=tc5,method="gbm")
+modFitGbm10<-train(classe~.,data = trainingData,trControl=tc10,method="gbm")
+stopCluster(cl)
+```
+
+```{r echo=FALSE,message=FALSE}
+results<-resamples(list(rpart5=modFitRpart5,rf5=modFitRf5,gbm5=modFitGbm5))
+bwplot(results,main="Comparison 5 fold cross validation models")
+```
+
+Box plot shows random forest model has better performance than other two.
+
+```{r echo=FALSE,message=FALSE,include=FALSE}
+predRPart5<-predict(modFitRpart5,newdata=validationData)
+rpart5Acc<-sum(predRPart5 == validationData$classe)/nrow(validationData)
+predRPart10<-predict(modFitRpart10,newdata=validationData)
+rpart10Acc<-sum(predRPart10 == validationData$classe)/nrow(validationData)
+predRf5<-predict(modFitRf5,newdata=validationData)
+rf5Acc<-sum(predRf5 == validationData$classe)/nrow(validationData)
+predGbm5<-predict(modFitGbm5,newdata=validationData)
+gbm5Acc<-sum(predGbm5 == validationData$classe)/nrow(validationData)
+predGbm10<-predict(modFitGbm10,newdata=validationData)
+gbm10Acc<-sum(predGbm10 == validationData$classe)/nrow(validationData)
+```
+
+Following are the accuracies of the models on cross validation set for models.  
+1. rpart5 - `r rpart5Acc`  
+2. rpart10 - `r rpart10Acc`  
+3. rf5 - `r rf5Acc`  
+4. gbm5 - `r gbm5Acc`  
+5. gbm10 - `r gbm10Acc`  
+
+```{r echo=FALSE,message=FALSE,include=FALSE}
+predRf5OOS<-predict(modFitRf5,newdata=testingData)
+rf5AccOOS<-sum(predRf5OOS == testingData$classe)/nrow(testingData)
+oose<-1 - rf5AccOOS
+
+```
+
+
+##Conclusion  
+Selecting model gbm5 (Random forest with 5 fold cross validation) which has highest accuracy on cross validation set for models. Out of sample error is `r oose`.
+
+
+
+
+
